@@ -26,6 +26,7 @@
             [metabase.models.revision.last-edit :as last-edit]
             [metabase.models.table :refer [Table]]
             [metabase.models.view-log :refer [ViewLog]]
+            [metabase.models.download-log :refer [DownloadLog]]
             [metabase.public-settings :as public-settings]
             [metabase.query-processor :as qp]
             [metabase.query-processor.async :as qp.async]
@@ -46,6 +47,13 @@
   (:import clojure.core.async.impl.channels.ManyToManyChannel
            java.util.UUID
            metabase.models.card.CardInstance))
+
+
+(defn log-download [user-id query export-format]
+  (let [filtered-query (assoc (select-keys query [:type :native :database, :card_id]) :export-format export-format)]
+    (db/insert! DownloadLog {:user_id user-id
+                             :query (json/generate-string filtered-query)
+                             :timestamp (java.time.LocalDateTime/now)})))
 
 ;;; --------------------------------------------------- Hydration ----------------------------------------------------
 
@@ -743,16 +751,20 @@
   [card-id export-format :as {{:keys [parameters]} :params}]
   {parameters    (s/maybe su/JSONString)
    export-format dataset-api/ExportFormat}
-  (run-query-for-card-async
-   card-id export-format
-   :parameters  (json/parse-string parameters keyword)
-   :constraints nil
-   :context     (dataset-api/export-format->context export-format)
-   :middleware  {:process-viz-settings?  true
-                 :skip-results-metadata? true
-                 :ignore-cached-results? true
-                 :format-rows?           false
-                 :js-int-to-string?      false}))
+  (let [parsed-parameters (json/parse-string parameters keyword)
+        user-id api/*current-user-id*]
+    (let [response (run-query-for-card-async
+                     card-id export-format
+                     :parameters  parsed-parameters
+                     :constraints nil
+                     :context     (dataset-api/export-format->context export-format)
+                     :middleware  {:process-viz-settings?  true
+                                   :skip-results-metadata? true
+                                   :ignore-cached-results? true
+                                   :format-rows?           false
+                                   :js-int-to-string?      false})]
+      (log-download user-id {:type "card-query" :native parsed-parameters :card_id card-id} export-format)
+      response)))
 
 
 ;;; ----------------------------------------------- Sharing is Caring ------------------------------------------------

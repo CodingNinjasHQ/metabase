@@ -8565,6 +8565,59 @@ databaseChangeLog:
                   name: moderated_item_type
               - column:
                   name: moderated_item_id
+  - changeSet:
+      id: 383
+      author: parikshit
+      comment: "Added 15.0.0: download_logs table to track download activities"
+      changes:
+        - createTable:
+            tableName: download_logs
+            remarks: "Table to store logs of downloads"
+            columns:
+              - column:
+                  name: id
+                  type: int
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+                  remarks: "Primary key"
+              - column:
+                  name: user_id
+                  type: int
+                  constraints:
+                    nullable: false
+                    references: core_user(id)
+                    foreignKeyName: fk_download_logs_ref_user_id
+                    deferrable: false
+                    initiallyDeferred: false
+                  remarks: "ID of the user who triggered the download"
+              - column:
+                  name: query
+                  type: text
+                  constraints:
+                    nullable: false
+                  remarks: "Query associated with the download"
+              - column:
+                  name: timestamp
+                  type: DATETIME
+                  constraints:
+                    nullable: false
+                  remarks: "Timestamp of the download"
+        - createIndex:
+            tableName: download_logs
+            indexName: idx_download_logs_user_id
+            columns:
+              - column:
+                  name: user_id
+                  remarks: "Index on user_id column"
+        - createIndex:
+            tableName: download_logs
+            indexName: idx_download_logs_timestamp
+            columns:
+              - column:
+                  name: timestamp
+                  remarks: "Index on timestamp column"
 
 
 # >>>>>>>>>> DO NOT ADD NEW MIGRATIONS BELOW THIS LINE! ADD THEM ABOVE <<<<<<<<<<

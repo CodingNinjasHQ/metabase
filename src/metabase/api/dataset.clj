@@ -22,7 +22,9 @@
             [metabase.util :as u]
             [metabase.util.i18n :refer [trs tru]]
             [metabase.util.schema :as su]
-            [schema.core :as s]))
+            [schema.core :as s]
+            [toucan.db :as td]
+            [metabase.models.download-log :refer [DownloadLog]]))
 
 ;;; -------------------------------------------- Running a Query Normally --------------------------------------------
 
@@ -62,6 +64,12 @@
     (binding [qp.perms/*card-id* source-card-id]
       (qp.streaming/streaming-response [context export-format]
         (qp-runner query info context)))))
+
+(defn log-download [user-id query export-format]
+  (let [filtered-query (assoc (select-keys query [:type :native :database]) :export-format export-format)]
+    (td/insert! DownloadLog {:user_id user-id
+                             :query (json/generate-string filtered-query)
+                             :timestamp (java.time.LocalDateTime/now)})))
 
 (api/defendpoint ^:streaming POST "/"
   "Execute a query and retrieve the results in the usual format."
@@ -120,12 +128,18 @@
                                                   (assoc :process-viz-settings? true
                                                          :skip-results-metadata? true
                                                          :format-rows? false))))]
-    (run-query-async
-     query
-     :export-format export-format
-     :context       (export-format->context export-format)
-     :qp-runner     qp/process-query-and-save-execution!)))
-
+    (let [user-id api/*current-user-id* ; get the current user ID
+          filtered-query (assoc (select-keys query [:type :native :database]) :export-format export-format)] ; filter the query to include only necessary fields and add export-format
+      ;; Run the query and retrieve the response
+      (let [response (run-query-async
+                       query
+                       :export-format export-format
+                       :context       (export-format->context export-format)
+                       :qp-runner     qp/process-query-and-save-execution!)]
+        ;; Log the download after running the query
+        (log-download user-id filtered-query export-format)
+        ;; Return the response
+        response))))
 
 ;;; ------------------------------------------------ Other Endpoints -------------------------------------------------
 
